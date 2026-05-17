@@ -3,49 +3,75 @@ import Lead from '../models/Lead';
 import Activity from '../models/Activity';
 import { AuthRequest } from '../middleware/auth';
 import { Parser } from 'json2csv';
+import { LEAD_STATUSES, LEAD_SOURCES, PAGINATION, SORTABLE_FIELDS } from '../constants';
+import type { CreateLeadBody, UpdateLeadBody, AddActivityBody } from '../middleware/validate';
+import type { LeadStatusType, LeadSourceType } from '../constants';
 
+// ─── Filter Query Builder ───────────────────────────────────────────────────────
+
+interface LeadQuery {
+  $or?: Array<Record<string, { $regex: string; $options: string }>>;
+  status?: LeadStatusType;
+  source?: LeadSourceType;
+}
+
+const buildFilterQuery = (search?: string, status?: string, source?: string): LeadQuery => {
+  const query: LeadQuery = {};
+
+  if (search && search.trim()) {
+    query.$or = [
+      { name: { $regex: search.trim(), $options: 'i' } },
+      { email: { $regex: search.trim(), $options: 'i' } },
+      { company: { $regex: search.trim(), $options: 'i' } },
+    ];
+  }
+
+  if (status && (LEAD_STATUSES as readonly string[]).includes(status)) {
+    query.status = status as LeadStatusType;
+  }
+
+  if (source && (LEAD_SOURCES as readonly string[]).includes(source)) {
+    query.source = source as LeadSourceType;
+  }
+
+  return query;
+};
+
+// ─── Controllers ────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/leads
+ * Fetches paginated, filtered, and sorted leads.
+ */
 export const getLeads = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const page = Math.max(1, parseInt(req.query.page as string) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 10));
+    const page = Math.max(PAGINATION.DEFAULT_PAGE, parseInt(req.query.page as string) || PAGINATION.DEFAULT_PAGE);
+    const limit = Math.min(PAGINATION.MAX_LIMIT, Math.max(PAGINATION.MIN_LIMIT, parseInt(req.query.limit as string) || PAGINATION.DEFAULT_LIMIT));
     const search = (req.query.search as string)?.trim() || '';
     const status = req.query.status as string;
     const source = req.query.source as string;
     const sortBy = (req.query.sortBy as string) || 'createdAt';
     const sortOrder = (req.query.sortOrder as string) || 'desc';
 
-    // Build query
-    const query: Record<string, any> = {};
+    // Build filter query
+    const query = buildFilterQuery(search, status, source);
 
-    if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-        { company: { $regex: search, $options: 'i' } },
-      ];
-    }
-
-    if (status && ['new', 'in_progress', 'converted', 'lost'].includes(status)) {
-      query.status = status;
-    }
-
-    if (source && ['website', 'social_media', 'referral', 'email', 'direct'].includes(source)) {
-      query.source = source;
-    }
-
-    // Sort
+    // Build sort object (validate sort field)
     const sort: Record<string, 1 | -1> = {};
-    sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
+    const safeSortBy = (SORTABLE_FIELDS as readonly string[]).includes(sortBy) ? sortBy : 'createdAt';
+    sort[safeSortBy] = sortOrder === 'asc' ? 1 : -1;
 
-    // Execute queries
-    const total = await Lead.countDocuments(query);
-    const leads = await Lead.find(query)
-      .populate('assignedTo', 'name email')
-      .populate('createdBy', 'name email')
-      .sort(sort)
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .lean();
+    // Execute count + find in parallel for performance
+    const [total, leads] = await Promise.all([
+      Lead.countDocuments(query),
+      Lead.find(query)
+        .populate('assignedTo', 'name email')
+        .populate('createdBy', 'name email')
+        .sort(sort)
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+    ]);
 
     const totalPages = Math.ceil(total / limit);
 
@@ -64,42 +90,25 @@ export const getLeads = async (req: AuthRequest, res: Response): Promise<void> =
       },
     });
   } catch (error) {
+    console.error('GetLeads error:', error);
     res.status(500).json({ success: false, message: 'Server error fetching leads' });
   }
 };
 
+/**
+ * POST /api/leads
+ * Creates a new lead. Request body pre-validated by Zod middleware.
+ */
 export const createLead = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { name, email, phone, company, jobTitle, status, source, notes, assignedTo } = req.body;
-
-    // Validation
-    const errors: Array<{ field: string; message: string }> = [];
-    if (!name || name.trim().length < 2 || name.trim().length > 100) {
-      errors.push({ field: 'name', message: 'Name must be 2-100 characters' });
-    }
-    if (!email || !/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(email)) {
-      errors.push({ field: 'email', message: 'Valid email is required' });
-    }
-
-    if (errors.length > 0) {
-      res.status(400).json({ success: false, message: 'Validation failed', errors });
-      return;
-    }
+    const body = req.body as CreateLeadBody;
 
     const lead = await Lead.create({
-      name: name.trim(),
-      email: email.toLowerCase().trim(),
-      phone: phone || '',
-      company: company || '',
-      jobTitle: jobTitle || '',
-      status: status || 'new',
-      source: source || 'website',
-      notes: notes || '',
-      assignedTo: assignedTo || null,
+      ...body,
       createdBy: req.user!.userId,
     });
 
-    // Create activity
+    // Log creation activity
     await Activity.create({
       leadId: lead._id,
       type: 'created',
@@ -117,10 +126,15 @@ export const createLead = async (req: AuthRequest, res: Response): Promise<void>
       data: { lead: populatedLead },
     });
   } catch (error) {
+    console.error('CreateLead error:', error);
     res.status(500).json({ success: false, message: 'Server error creating lead' });
   }
 };
 
+/**
+ * GET /api/leads/:id
+ * Returns a single lead with its activity timeline.
+ */
 export const getLead = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const lead = await Lead.findById(req.params.id)
@@ -141,13 +155,18 @@ export const getLead = async (req: AuthRequest, res: Response): Promise<void> =>
       data: { lead, activities },
     });
   } catch (error) {
+    console.error('GetLead error:', error);
     res.status(500).json({ success: false, message: 'Server error fetching lead' });
   }
 };
 
+/**
+ * PUT /api/leads/:id
+ * Updates an existing lead. Request body pre-validated by Zod middleware.
+ */
 export const updateLead = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { name, email, phone, company, jobTitle, status, source, notes, assignedTo } = req.body;
+    const body = req.body as UpdateLeadBody;
     const leadId = req.params.id;
 
     const existingLead = await Lead.findById(leadId);
@@ -156,28 +175,19 @@ export const updateLead = async (req: AuthRequest, res: Response): Promise<void>
       return;
     }
 
-    // Build update object
-    const updateData: Record<string, any> = {};
-    if (name !== undefined) updateData.name = name.trim();
-    if (email !== undefined) updateData.email = email.toLowerCase().trim();
-    if (phone !== undefined) updateData.phone = phone;
-    if (company !== undefined) updateData.company = company;
-    if (jobTitle !== undefined) updateData.jobTitle = jobTitle;
-    if (status !== undefined) updateData.status = status;
-    if (source !== undefined) updateData.source = source;
-    if (notes !== undefined) updateData.notes = notes;
-    if (assignedTo !== undefined) updateData.assignedTo = assignedTo || null;
-
-    const lead = await Lead.findByIdAndUpdate(leadId, updateData, { new: true })
+    const lead = await Lead.findByIdAndUpdate(leadId, body, {
+      new: true,
+      runValidators: true,
+    })
       .populate('assignedTo', 'name email')
       .populate('createdBy', 'name email');
 
-    // Create status changed activity
-    if (status && status !== existingLead.status) {
+    // Log status change activity
+    if (body.status && body.status !== existingLead.status) {
       await Activity.create({
-        leadId: leadId,
+        leadId,
         type: 'status_changed',
-        description: `Status changed from "${existingLead.status}" to "${status}"`,
+        description: `Status changed from "${existingLead.status}" to "${body.status}"`,
         performedBy: req.user!.userId,
       });
     }
@@ -188,10 +198,16 @@ export const updateLead = async (req: AuthRequest, res: Response): Promise<void>
       data: { lead },
     });
   } catch (error) {
+    console.error('UpdateLead error:', error);
     res.status(500).json({ success: false, message: 'Server error updating lead' });
   }
 };
 
+/**
+ * DELETE /api/leads/:id
+ * Deletes a lead and its associated activities.
+ * Protected by roleMiddleware(['admin']) in routes.
+ */
 export const deleteLead = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const lead = await Lead.findById(req.params.id);
@@ -200,7 +216,7 @@ export const deleteLead = async (req: AuthRequest, res: Response): Promise<void>
       return;
     }
 
-    // Delete related activities
+    // Delete related activities, then the lead
     await Activity.deleteMany({ leadId: req.params.id });
     await Lead.findByIdAndDelete(req.params.id);
 
@@ -209,27 +225,20 @@ export const deleteLead = async (req: AuthRequest, res: Response): Promise<void>
       message: 'Lead deleted successfully',
     });
   } catch (error) {
+    console.error('DeleteLead error:', error);
     res.status(500).json({ success: false, message: 'Server error deleting lead' });
   }
 };
 
+/**
+ * POST /api/leads/:id/activity
+ * Adds an activity entry to a lead's timeline.
+ * Request body pre-validated by Zod middleware.
+ */
 export const addActivity = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { type, description } = req.body;
+    const { type, description } = req.body as AddActivityBody;
     const leadId = req.params.id;
-
-    const errors: Array<{ field: string; message: string }> = [];
-    if (!type || !['email_sent', 'call_made', 'note_added', 'status_changed'].includes(type)) {
-      errors.push({ field: 'type', message: 'Valid activity type is required' });
-    }
-    if (!description || description.trim().length === 0) {
-      errors.push({ field: 'description', message: 'Description is required' });
-    }
-
-    if (errors.length > 0) {
-      res.status(400).json({ success: false, message: 'Validation failed', errors });
-      return;
-    }
 
     const lead = await Lead.findById(leadId);
     if (!lead) {
@@ -240,7 +249,7 @@ export const addActivity = async (req: AuthRequest, res: Response): Promise<void
     const activity = await Activity.create({
       leadId,
       type,
-      description: description.trim(),
+      description,
       performedBy: req.user!.userId,
     });
 
@@ -250,36 +259,32 @@ export const addActivity = async (req: AuthRequest, res: Response): Promise<void
       data: { activity },
     });
   } catch (error) {
+    console.error('AddActivity error:', error);
     res.status(500).json({ success: false, message: 'Server error adding activity' });
   }
 };
 
+/**
+ * GET /api/leads/export
+ * Exports filtered leads as a CSV file download.
+ */
 export const exportCSV = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const search = (req.query.search as string)?.trim() || '';
     const status = req.query.status as string;
     const source = req.query.source as string;
 
-    // Build query (same as getLeads)
-    const query: Record<string, any> = {};
-    if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-        { company: { $regex: search, $options: 'i' } },
-      ];
-    }
-    if (status && ['new', 'in_progress', 'converted', 'lost'].includes(status)) {
-      query.status = status;
-    }
-    if (source && ['website', 'social_media', 'referral', 'email', 'direct'].includes(source)) {
-      query.source = source;
-    }
+    const query = buildFilterQuery(search, status, source);
 
     const leads = await Lead.find(query)
       .populate('assignedTo', 'name')
       .sort({ createdAt: -1 })
       .lean();
+
+    interface CsvLead {
+      assignedTo?: { name: string } | null;
+      createdAt: Date | string;
+    }
 
     const fields = [
       { label: 'Name', value: 'name' },
@@ -290,17 +295,21 @@ export const exportCSV = async (req: AuthRequest, res: Response): Promise<void> 
       { label: 'Status', value: 'status' },
       { label: 'Source', value: 'source' },
       { label: 'Notes', value: 'notes' },
-      { label: 'Assigned To', value: (lead: any) => lead.assignedTo?.name || 'Unassigned' },
-      { label: 'Created Date', value: (lead: any) => new Date(lead.createdAt).toISOString() },
+      { label: 'Assigned To', value: (lead: CsvLead) => lead.assignedTo?.name || 'Unassigned' },
+      { label: 'Created Date', value: (lead: CsvLead) => new Date(lead.createdAt).toISOString() },
     ];
 
     const parser = new Parser({ fields });
     const csv = parser.parse(leads);
 
+    // Include date in filename for traceability
+    const dateStr = new Date().toISOString().split('T')[0];
+
     res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename=leads.csv');
+    res.setHeader('Content-Disposition', `attachment; filename=leads_${dateStr}.csv`);
     res.status(200).send(csv);
   } catch (error) {
+    console.error('ExportCSV error:', error);
     res.status(500).json({ success: false, message: 'Server error exporting CSV' });
   }
 };

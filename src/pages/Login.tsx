@@ -1,10 +1,19 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Loader2, Shield } from 'lucide-react';
 import { toast } from 'sonner';
-import { api } from '@/services/api';
+import { useAuth } from '@/contexts/AuthContext';
+import type { AxiosError } from 'axios';
 
 interface FormData {
   email: string;
@@ -14,20 +23,31 @@ interface FormData {
 interface FormErrors {
   email?: string;
   password?: string;
+  name?: string;
+}
+
+interface ApiErrorResponse {
+  message?: string;
 }
 
 const Login: React.FC = () => {
+  const navigate = useNavigate();
+  const { login, register } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
   const [formData, setFormData] = useState<FormData>({ email: '', password: '' });
   const [name, setName] = useState('');
+  const [role, setRole] = useState<'admin' | 'sales'>('sales');
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const validate = (): boolean => {
     const newErrors: FormErrors = {};
+    if (!isLogin && (!name.trim() || name.trim().length < 3)) {
+      newErrors.name = 'Name must be at least 3 characters';
+    }
     if (!formData.email.trim()) {
       newErrors.email = 'Email is required';
-    } else if (!/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(formData.email)) {
+    } else if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(formData.email)) {
       newErrors.email = 'Please enter a valid email';
     }
     if (!formData.password) {
@@ -47,24 +67,16 @@ const Login: React.FC = () => {
     setIsSubmitting(true);
     try {
       if (isLogin) {
-        const response = await api.login(formData.email, formData.password);
-        if (response.success) {
-          localStorage.setItem('token', response.data.token);
-          localStorage.setItem('user', JSON.stringify(response.data.user));
-          toast.success('Login successful');
-          window.location.href = '/';
-        }
+        await login(formData.email, formData.password);
+        toast.success('Login successful');
       } else {
-        const response = await api.register(name, formData.email, formData.password);
-        if (response.success) {
-          localStorage.setItem('token', response.data.token);
-          localStorage.setItem('user', JSON.stringify(response.data.user));
-          toast.success('Registration successful');
-          window.location.href = '/';
-        }
+        await register(name, formData.email, formData.password, role);
+        toast.success('Registration successful');
       }
-    } catch (error: any) {
-      const message = error.response?.data?.message || 'Authentication failed';
+      navigate('/');
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<ApiErrorResponse>;
+      const message = axiosError.response?.data?.message || 'Authentication failed';
       toast.error(message);
     } finally {
       setIsSubmitting(false);
@@ -89,9 +101,9 @@ const Login: React.FC = () => {
         </div>
 
         {/* Form Card */}
-        <div className="bg-white rounded-2xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
+        <div className="bg-white dark:bg-[#111111] rounded-2xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
           <div className="text-center mb-6">
-            <h2 className="text-xl font-semibold text-[#111111]">
+            <h2 className="text-xl font-semibold text-[#111111] dark:text-white">
               {isLogin ? 'Welcome Back' : 'Create Account'}
             </h2>
             <p className="text-sm text-[#6B7280] mt-1">
@@ -101,10 +113,10 @@ const Login: React.FC = () => {
 
           {/* Demo Credentials */}
           {isLogin && (
-            <div className="bg-[#F9FAFB] rounded-lg p-3 mb-5 flex items-start gap-2">
+            <div className="bg-[#F9FAFB] dark:bg-[#1A1A1A] rounded-lg p-3 mb-5 flex items-start gap-2">
               <Shield size={16} className="text-[#FFB300] mt-0.5 flex-shrink-0" />
               <div className="text-xs text-[#6B7280]">
-                <p className="font-medium text-[#111111]">Demo Credentials:</p>
+                <p className="font-medium text-[#111111] dark:text-white">Demo Credentials:</p>
                 <p>Admin: admin@leadflow.com / admin123</p>
                 <p>Sales: rahul@leadflow.com / sales123</p>
               </div>
@@ -113,23 +125,40 @@ const Login: React.FC = () => {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {!isLogin && (
-              <div>
-                <Label htmlFor="name" className="text-sm font-medium text-[#111111]">
-                  Full Name <span className="text-[#EF4444]">*</span>
-                </Label>
-                <Input
-                  id="name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="John Doe"
-                  required={!isLogin}
-                  className="mt-1.5 h-11 border-[#E5E7EB] focus-visible:ring-[#FFB300]"
-                />
-              </div>
+              <>
+                <div>
+                  <Label htmlFor="name" className="text-sm font-medium text-[#111111] dark:text-white">
+                    Full Name <span className="text-[#EF4444]">*</span>
+                  </Label>
+                  <Input
+                    id="name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="John Doe"
+                    className={`mt-1.5 h-11 dark:bg-[#1A1A1A] dark:border-[#2A2A2A] dark:text-white ${errors.name ? 'border-[#EF4444] focus-visible:ring-[#EF4444]' : 'border-[#E5E7EB] focus-visible:ring-[#FFB300]'}`}
+                  />
+                  {errors.name && <p className="text-xs text-[#EF4444] mt-1">{errors.name}</p>}
+                </div>
+
+                <div>
+                  <Label className="text-sm font-medium text-[#111111] dark:text-white">
+                    Role
+                  </Label>
+                  <Select value={role} onValueChange={(value) => setRole(value as 'admin' | 'sales')}>
+                    <SelectTrigger className="mt-1.5 h-11 border-[#E5E7EB] dark:bg-[#1A1A1A] dark:border-[#2A2A2A] dark:text-white focus:ring-[#FFB300]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sales">Sales User</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
             )}
 
             <div>
-              <Label htmlFor="email" className="text-sm font-medium text-[#111111]">
+              <Label htmlFor="email" className="text-sm font-medium text-[#111111] dark:text-white">
                 Email <span className="text-[#EF4444]">*</span>
               </Label>
               <Input
@@ -138,13 +167,13 @@ const Login: React.FC = () => {
                 value={formData.email}
                 onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
                 placeholder="you@company.com"
-                className={`mt-1.5 h-11 ${errors.email ? 'border-[#EF4444] focus-visible:ring-[#EF4444]' : 'border-[#E5E7EB] focus-visible:ring-[#FFB300]'}`}
+                className={`mt-1.5 h-11 dark:bg-[#1A1A1A] dark:border-[#2A2A2A] dark:text-white ${errors.email ? 'border-[#EF4444] focus-visible:ring-[#EF4444]' : 'border-[#E5E7EB] focus-visible:ring-[#FFB300]'}`}
               />
               {errors.email && <p className="text-xs text-[#EF4444] mt-1">{errors.email}</p>}
             </div>
 
             <div>
-              <Label htmlFor="password" className="text-sm font-medium text-[#111111]">
+              <Label htmlFor="password" className="text-sm font-medium text-[#111111] dark:text-white">
                 Password <span className="text-[#EF4444]">*</span>
               </Label>
               <Input
@@ -153,7 +182,7 @@ const Login: React.FC = () => {
                 value={formData.password}
                 onChange={(e) => setFormData((prev) => ({ ...prev, password: e.target.value }))}
                 placeholder="••••••••"
-                className={`mt-1.5 h-11 ${errors.password ? 'border-[#EF4444] focus-visible:ring-[#EF4444]' : 'border-[#E5E7EB] focus-visible:ring-[#FFB300]'}`}
+                className={`mt-1.5 h-11 dark:bg-[#1A1A1A] dark:border-[#2A2A2A] dark:text-white ${errors.password ? 'border-[#EF4444] focus-visible:ring-[#EF4444]' : 'border-[#E5E7EB] focus-visible:ring-[#FFB300]'}`}
               />
               {errors.password && <p className="text-xs text-[#EF4444] mt-1">{errors.password}</p>}
             </div>

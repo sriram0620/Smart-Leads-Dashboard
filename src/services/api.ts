@@ -14,7 +14,7 @@ class ApiService {
       },
     });
 
-    // Request interceptor to add auth token
+    // Request interceptor — attach auth token
     this.client.interceptors.request.use(
       (config) => {
         const token = localStorage.getItem('token');
@@ -26,7 +26,7 @@ class ApiService {
       (error) => Promise.reject(error)
     );
 
-    // Response interceptor for error handling
+    // Response interceptor — handle 401 globally
     this.client.interceptors.response.use(
       (response) => response,
       (error: AxiosError) => {
@@ -40,7 +40,8 @@ class ApiService {
     );
   }
 
-  // Auth
+  // ─── Auth ───────────────────────────────────────────────────────────────
+
   async register(name: string, email: string, password: string, role?: string): Promise<AuthResponse> {
     const response = await this.client.post('/auth/register', { name, email, password, role });
     return response.data;
@@ -56,7 +57,8 @@ class ApiService {
     return response.data;
   }
 
-  // Leads
+  // ─── Leads ──────────────────────────────────────────────────────────────
+
   async getLeads(filters: LeadFilters = {}): Promise<LeadsResponse> {
     const params = new URLSearchParams();
     if (filters.search) params.append('search', filters.search);
@@ -96,19 +98,40 @@ class ApiService {
     return response.data;
   }
 
-  // Analytics
+  // ─── Analytics ──────────────────────────────────────────────────────────
+
   async getSummary(): Promise<{ success: boolean; data: AnalyticsSummary }> {
     const response = await this.client.get('/analytics/summary');
     return response.data;
   }
 
-  // Export CSV
-  exportCSV(filters: LeadFilters = {}): string {
+  // ─── CSV Export (via blob download with auth header) ────────────────────
+
+  async exportCSV(filters: LeadFilters = {}): Promise<void> {
     const params = new URLSearchParams();
     if (filters.search) params.append('search', filters.search);
     if (filters.status) params.append('status', filters.status);
     if (filters.source) params.append('source', filters.source);
-    return `${API_URL}/leads/export?${params.toString()}`;
+
+    const response = await this.client.get(`/leads/export?${params.toString()}`, {
+      responseType: 'blob',
+    });
+
+    // Create blob URL and trigger download
+    const blob = new Blob([response.data], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+
+    // Extract filename from Content-Disposition header, fallback to dated name
+    const contentDisposition = response.headers['content-disposition'];
+    const filenameMatch = contentDisposition?.match(/filename=(.+)/);
+    link.download = filenameMatch ? filenameMatch[1] : `leads_${new Date().toISOString().split('T')[0]}.csv`;
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
   }
 }
 

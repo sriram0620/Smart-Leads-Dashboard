@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import { LEAD_STATUSES, LEAD_SOURCES } from '../constants';
 
 export interface ILead extends Document {
   _id: mongoose.Types.ObjectId;
@@ -7,8 +8,8 @@ export interface ILead extends Document {
   phone?: string;
   company?: string;
   jobTitle?: string;
-  status: 'new' | 'in_progress' | 'converted' | 'lost';
-  source: 'website' | 'social_media' | 'referral' | 'email' | 'direct';
+  status: 'new' | 'contacted' | 'qualified' | 'lost';
+  source: 'website' | 'instagram' | 'referral';
   notes?: string;
   assignedTo?: mongoose.Types.ObjectId;
   createdBy: mongoose.Types.ObjectId;
@@ -30,7 +31,7 @@ const LeadSchema: Schema = new Schema(
       required: [true, 'Email is required'],
       lowercase: true,
       trim: true,
-      match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please provide a valid email'],
+      match: [/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, 'Please provide a valid email'],
     },
     phone: {
       type: String,
@@ -49,12 +50,12 @@ const LeadSchema: Schema = new Schema(
     },
     status: {
       type: String,
-      enum: ['new', 'in_progress', 'converted', 'lost'],
+      enum: LEAD_STATUSES,
       default: 'new',
     },
     source: {
       type: String,
-      enum: ['website', 'social_media', 'referral', 'email', 'direct'],
+      enum: LEAD_SOURCES,
       default: 'website',
     },
     notes: {
@@ -79,6 +80,7 @@ const LeadSchema: Schema = new Schema(
   }
 );
 
+// Indexes for search and filtering performance
 LeadSchema.index({ name: 'text', email: 'text', company: 'text' });
 LeadSchema.index({ status: 1 });
 LeadSchema.index({ source: 1 });

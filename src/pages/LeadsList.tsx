@@ -7,6 +7,7 @@ import SourceBadge from '@/components/shared/SourceBadge';
 import EmptyState from '@/components/shared/EmptyState';
 import { api } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS } from '@/types';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -36,8 +37,14 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  Loader2,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import type { AxiosError } from 'axios';
+
+interface ApiErrorResponse {
+  message?: string;
+}
 
 const LeadsList: React.FC = () => {
   const navigate = useNavigate();
@@ -46,6 +53,7 @@ const LeadsList: React.FC = () => {
   const [searchInput, setSearchInput] = useState(filters.search || '');
   const [leadToDelete, setLeadToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const debouncedSearch = useDebounce(searchInput, 300);
 
@@ -80,22 +88,29 @@ const LeadsList: React.FC = () => {
     try {
       await deleteLead(leadToDelete);
       toast.success('Lead deleted successfully');
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to delete lead');
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<ApiErrorResponse>;
+      toast.error(axiosError.response?.data?.message || 'Failed to delete lead');
     } finally {
       setLeadToDelete(null);
       setIsDeleting(false);
     }
   };
 
-  const handleExportCSV = () => {
-    const url = api.exportCSV({
-      search: filters.search,
-      status: filters.status,
-      source: filters.source,
-    });
-    window.open(url, '_blank');
-    toast.success('CSV export started');
+  const handleExportCSV = async () => {
+    setIsExporting(true);
+    try {
+      await api.exportCSV({
+        search: filters.search,
+        status: filters.status,
+        source: filters.source,
+      });
+      toast.success('CSV exported successfully');
+    } catch {
+      toast.error('Failed to export CSV');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handlePageChange = (page: number) => {
@@ -106,26 +121,27 @@ const LeadsList: React.FC = () => {
     <div className="space-y-6">
       {/* Filters Bar */}
       <div
-        className="bg-white rounded-xl p-5 shadow-[0_2px_12px_rgba(0,0,0,0.06)]"
+        className="bg-white dark:bg-[#111111] rounded-xl p-4 md:p-5 shadow-[0_2px_12px_rgba(0,0,0,0.06)] dark:shadow-[0_2px_12px_rgba(0,0,0,0.2)]"
         style={{
           animation: 'slideUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards',
           opacity: 0,
         }}
       >
-        <div className="flex flex-wrap items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3 md:gap-4">
           {/* Search */}
-          <div className="relative w-[260px]">
+          <div className="relative w-full sm:w-[260px]">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B7280]" />
             <Input
-              placeholder="Search by name, email, company..."
+              id="lead-search"
+              placeholder="Search by name, email..."
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              className="pl-9 h-10 border-[#E5E7EB] focus:border-[#FFB300] focus:ring-[#FFB300]"
+              className="pl-9 h-10 border-[#E5E7EB] dark:bg-[#1A1A1A] dark:border-[#2A2A2A] dark:text-white focus:border-[#FFB300] focus:ring-[#FFB300]"
             />
             {searchInput && (
               <button
                 onClick={() => setSearchInput('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6B7280] hover:text-[#111111]"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6B7280] hover:text-[#111111] dark:hover:text-white"
               >
                 <X size={14} />
               </button>
@@ -134,30 +150,27 @@ const LeadsList: React.FC = () => {
 
           {/* Status Filter */}
           <Select value={filters.status || 'all'} onValueChange={handleStatusChange}>
-            <SelectTrigger className="w-[150px] h-10 border-[#E5E7EB]">
+            <SelectTrigger className="w-[140px] h-10 border-[#E5E7EB] dark:bg-[#1A1A1A] dark:border-[#2A2A2A] dark:text-white">
               <SelectValue placeholder="All Status" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="new">New</SelectItem>
-              <SelectItem value="in_progress">In Progress</SelectItem>
-              <SelectItem value="converted">Converted</SelectItem>
-              <SelectItem value="lost">Lost</SelectItem>
+              {LEAD_STATUS_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
 
           {/* Source Filter */}
           <Select value={filters.source || 'all'} onValueChange={handleSourceChange}>
-            <SelectTrigger className="w-[150px] h-10 border-[#E5E7EB]">
+            <SelectTrigger className="w-[140px] h-10 border-[#E5E7EB] dark:bg-[#1A1A1A] dark:border-[#2A2A2A] dark:text-white">
               <SelectValue placeholder="All Sources" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Sources</SelectItem>
-              <SelectItem value="website">Website</SelectItem>
-              <SelectItem value="social_media">Social Media</SelectItem>
-              <SelectItem value="referral">Referral</SelectItem>
-              <SelectItem value="email">Email</SelectItem>
-              <SelectItem value="direct">Direct</SelectItem>
+              {LEAD_SOURCE_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
 
@@ -166,7 +179,7 @@ const LeadsList: React.FC = () => {
             value={`${filters.sortBy}|${filters.sortOrder}`}
             onValueChange={handleSortChange}
           >
-            <SelectTrigger className="w-[160px] h-10 border-[#E5E7EB]">
+            <SelectTrigger className="w-[150px] h-10 border-[#E5E7EB] dark:bg-[#1A1A1A] dark:border-[#2A2A2A] dark:text-white">
               <SelectValue placeholder="Sort by" />
             </SelectTrigger>
             <SelectContent>
@@ -177,23 +190,28 @@ const LeadsList: React.FC = () => {
             </SelectContent>
           </Select>
 
-          <div className="flex items-center gap-3 ml-auto">
+          <div className="flex items-center gap-2 sm:gap-3 ml-auto">
             {hasActiveFilters && (
               <Button
                 variant="ghost"
                 onClick={clearFilters}
-                className="text-[#6B7280] hover:text-[#111111] h-10"
+                className="text-[#6B7280] hover:text-[#111111] dark:hover:text-white h-10"
               >
-                Clear Filters
+                Clear
               </Button>
             )}
             <Button
               variant="outline"
               onClick={handleExportCSV}
+              disabled={isExporting}
               className="border-[#FFB300] text-[#FFB300] hover:bg-[#FFB300] hover:text-black h-10 transition-all duration-200"
             >
-              <Download size={16} className="mr-1.5" />
-              Export CSV
+              {isExporting ? (
+                <Loader2 size={16} className="mr-1.5 animate-spin" />
+              ) : (
+                <Download size={16} className="mr-1.5" />
+              )}
+              <span className="hidden sm:inline">Export CSV</span>
             </Button>
           </div>
         </div>
@@ -201,7 +219,7 @@ const LeadsList: React.FC = () => {
 
       {/* Leads Table */}
       <div
-        className="bg-white rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.06)] overflow-hidden"
+        className="bg-white dark:bg-[#111111] rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.06)] dark:shadow-[0_2px_12px_rgba(0,0,0,0.2)] overflow-hidden"
         style={{
           animation: 'slideUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.1s forwards',
           opacity: 0,
@@ -223,23 +241,22 @@ const LeadsList: React.FC = () => {
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px]">
+              <table className="w-full min-w-[700px]">
                 <thead>
-                  <tr className="bg-[#F9FAFB]">
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Name</th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Email</th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Status</th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Source</th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Assigned To</th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Created</th>
-                    <th className="text-right px-6 py-3 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Actions</th>
+                  <tr className="bg-[#F9FAFB] dark:bg-[#0A0A0A]">
+                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#6B7280] dark:text-gray-400 uppercase tracking-wider">Name</th>
+                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#6B7280] dark:text-gray-400 uppercase tracking-wider">Email</th>
+                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#6B7280] dark:text-gray-400 uppercase tracking-wider">Status</th>
+                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#6B7280] dark:text-gray-400 uppercase tracking-wider">Source</th>
+                    <th className="text-left px-6 py-3 text-xs font-semibold text-[#6B7280] dark:text-gray-400 uppercase tracking-wider">Created</th>
+                    <th className="text-right px-6 py-3 text-xs font-semibold text-[#6B7280] dark:text-gray-400 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {leads.map((lead, index) => (
                     <tr
                       key={lead._id}
-                      className="border-b border-[#E5E7EB] hover:bg-[#F9FAFB] transition-colors duration-150 cursor-pointer"
+                      className="border-b border-[#E5E7EB] dark:border-[#2A2A2A] hover:bg-[#F9FAFB] dark:hover:bg-[#1A1A1A] transition-colors duration-150 cursor-pointer"
                       onClick={() => navigate(`/leads/${lead._id}`)}
                       style={{
                         animation: 'slideUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards',
@@ -249,21 +266,18 @@ const LeadsList: React.FC = () => {
                     >
                       <td className="px-6 py-4">
                         <div>
-                          <p className="text-sm font-medium text-[#111111]">{lead.name}</p>
-                          {lead.company && <p className="text-xs text-[#6B7280]">{lead.company}</p>}
+                          <p className="text-sm font-medium text-[#111111] dark:text-white">{lead.name}</p>
+                          {lead.company && <p className="text-xs text-[#6B7280] dark:text-gray-400">{lead.company}</p>}
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm text-[#6B7280]">{lead.email}</td>
+                      <td className="px-6 py-4 text-sm text-[#6B7280] dark:text-gray-400">{lead.email}</td>
                       <td className="px-6 py-4">
                         <StatusBadge status={lead.status} />
                       </td>
                       <td className="px-6 py-4">
                         <SourceBadge source={lead.source} />
                       </td>
-                      <td className="px-6 py-4 text-sm text-[#6B7280]">
-                        {lead.assignedTo?.name || 'Unassigned'}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-[#6B7280]">
+                      <td className="px-6 py-4 text-sm text-[#6B7280] dark:text-gray-400">
                         {format(new Date(lead.createdAt), 'MMM dd, yyyy')}
                       </td>
                       <td className="px-6 py-4">
@@ -272,7 +286,7 @@ const LeadsList: React.FC = () => {
                             variant="ghost"
                             size="sm"
                             onClick={() => navigate(`/leads/${lead._id}/edit`)}
-                            className="h-8 w-8 p-0 text-[#6B7280] hover:text-[#111111] hover:bg-[#F5F5F5]"
+                            className="h-8 w-8 p-0 text-[#6B7280] hover:text-[#111111] dark:hover:text-white hover:bg-[#F5F5F5] dark:hover:bg-[#2A2A2A]"
                           >
                             <Pencil size={15} />
                           </Button>
@@ -281,7 +295,7 @@ const LeadsList: React.FC = () => {
                               variant="ghost"
                               size="sm"
                               onClick={() => setLeadToDelete(lead._id)}
-                              className="h-8 w-8 p-0 text-[#6B7280] hover:text-[#EF4444] hover:bg-[#FEF2F2]"
+                              className="h-8 w-8 p-0 text-[#6B7280] hover:text-[#EF4444] hover:bg-[#FEF2F2] dark:hover:bg-[#2A1515]"
                             >
                               <Trash2 size={15} />
                             </Button>
@@ -296,8 +310,8 @@ const LeadsList: React.FC = () => {
 
             {/* Pagination */}
             {pagination && pagination.totalPages > 1 && (
-              <div className="px-6 py-4 border-t border-[#E5E7EB] flex items-center justify-between">
-                <p className="text-sm text-[#6B7280]">
+              <div className="px-6 py-4 border-t border-[#E5E7EB] dark:border-[#2A2A2A] flex items-center justify-between">
+                <p className="text-sm text-[#6B7280] dark:text-gray-400">
                   Showing {(pagination.page - 1) * pagination.limit + 1}-
                   {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} results
                 </p>
@@ -307,7 +321,7 @@ const LeadsList: React.FC = () => {
                     size="sm"
                     onClick={() => handlePageChange(pagination.page - 1)}
                     disabled={!pagination.hasPrevPage}
-                    className="h-8 w-8 p-0 text-[#6B7280] hover:text-[#111111] disabled:opacity-40"
+                    className="h-8 w-8 p-0 text-[#6B7280] hover:text-[#111111] dark:hover:text-white disabled:opacity-40"
                   >
                     <ChevronLeft size={16} />
                   </Button>
@@ -327,7 +341,7 @@ const LeadsList: React.FC = () => {
                           className={`h-8 w-8 p-0 text-sm font-medium ${
                             pagination.page === pageNum
                               ? 'bg-[#FFB300] text-black hover:bg-[#FFA000]'
-                              : 'text-[#6B7280] hover:text-[#111111]'
+                              : 'text-[#6B7280] hover:text-[#111111] dark:hover:text-white'
                           }`}
                         >
                           {pageNum}
@@ -344,7 +358,7 @@ const LeadsList: React.FC = () => {
                     size="sm"
                     onClick={() => handlePageChange(pagination.page + 1)}
                     disabled={!pagination.hasNextPage}
-                    className="h-8 w-8 p-0 text-[#6B7280] hover:text-[#111111] disabled:opacity-40"
+                    className="h-8 w-8 p-0 text-[#6B7280] hover:text-[#111111] dark:hover:text-white disabled:opacity-40"
                   >
                     <ChevronRight size={16} />
                   </Button>
@@ -357,18 +371,18 @@ const LeadsList: React.FC = () => {
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={!!leadToDelete} onOpenChange={() => setLeadToDelete(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="dark:bg-[#111111] dark:border-[#2A2A2A]">
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-[#EF4444]">
               <Trash2 size={20} />
               Delete Lead
             </AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogDescription className="dark:text-gray-400">
               Are you sure you want to delete this lead? This action cannot be undone and all associated activities will be removed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeleting} className="dark:bg-[#1A1A1A] dark:border-[#2A2A2A] dark:text-white">Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
               disabled={isDeleting}

@@ -9,7 +9,24 @@ import analyticsRoutes from './routes/analytics';
 import { errorHandler, notFound } from './middleware/errorHandler';
 import { seedDatabase } from './utils/seedData';
 
+// Load environment variables before anything else
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
+// ─── Startup Validation ─────────────────────────────────────────────────────────
+
+const validateEnv = (): void => {
+  const required = ['JWT_SECRET'];
+  const missing = required.filter((key) => !process.env[key]);
+  if (missing.length > 0) {
+    console.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
+    console.error('   Create a .env file based on .env.example');
+    process.exit(1);
+  }
+};
+
+validateEnv();
+
+// ─── Express App Setup ──────────────────────────────────────────────────────────
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -24,7 +41,12 @@ app.use(express.urlencoded({ extended: true }));
 
 // Health check
 app.get('/api/health', (_req, res) => {
-  res.status(200).json({ success: true, message: 'Server is running' });
+  res.status(200).json({
+    success: true,
+    message: 'Server is running',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+  });
 });
 
 // API Routes
@@ -36,17 +58,20 @@ app.use('/api/analytics', analyticsRoutes);
 app.use(notFound);
 app.use(errorHandler);
 
-// Start server
-const startServer = async () => {
+// ─── Server Start ───────────────────────────────────────────────────────────────
+
+const startServer = async (): Promise<void> => {
   try {
     await connectDB();
     await seedDatabase();
 
     app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
+      console.log(`\n🚀 Server running on port ${PORT}`);
+      console.log(`📡 API: http://localhost:${PORT}/api`);
+      console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}\n`);
     });
   } catch (error) {
-    console.error('Failed to start server:', error);
+    console.error('❌ Failed to start server:', error);
     process.exit(1);
   }
 };

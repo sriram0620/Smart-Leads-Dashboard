@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, BarChart3, LogOut, Shield } from 'lucide-react';
+import { LayoutDashboard, Users, BarChart3, LogOut, Shield, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
 const navItems = [
@@ -9,7 +9,12 @@ const navItems = [
   { path: '/analytics', label: 'Analytics', icon: BarChart3 },
 ];
 
-const Sidebar: React.FC = () => {
+interface SidebarProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+const Sidebar: React.FC<SidebarProps> = ({ open, onClose }) => {
   const location = useLocation();
   const { user, logout } = useAuth();
 
@@ -19,13 +24,24 @@ const Sidebar: React.FC = () => {
   };
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-[260px] bg-[#0A0A0A] flex flex-col z-50">
+    <aside
+      className={`fixed left-0 top-0 h-full w-[260px] bg-[#0A0A0A] flex flex-col z-50 transition-transform duration-300 md:translate-x-0 ${
+        open ? 'translate-x-0' : '-translate-x-full'
+      }`}
+    >
       {/* Brand */}
-      <div className="px-6 py-5 flex items-center gap-2">
+      <div className="px-6 py-5 flex items-center justify-between">
         <div className="relative">
           <span className="text-white text-xl font-bold tracking-tight">LeadFlow</span>
           <span className="absolute -top-0.5 -right-2.5 w-2 h-2 rounded-full bg-[#FFB300]"></span>
         </div>
+        <button
+          onClick={onClose}
+          className="md:hidden text-gray-400 hover:text-white transition-colors"
+          aria-label="Close sidebar"
+        >
+          <X size={20} />
+        </button>
       </div>
 
       {/* Navigation */}
@@ -36,6 +52,7 @@ const Sidebar: React.FC = () => {
             <Link
               key={item.path}
               to={item.path}
+              onClick={onClose}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 ${
                 active
                   ? 'text-[#FFB300] bg-[#1A1A1A] border-l-[3px] border-[#FFB300]'

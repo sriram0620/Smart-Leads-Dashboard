@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '@/services/api';
 import { useDebounce } from '@/hooks/useDebounce';
 import type { Lead, LeadFilters, PaginationData } from '@/types';
+import type { AxiosError } from 'axios';
 
 interface UseLeadsReturn {
   leads: Lead[];
@@ -12,6 +13,10 @@ interface UseLeadsReturn {
   setFilters: React.Dispatch<React.SetStateAction<LeadFilters>>;
   refresh: () => void;
   deleteLead: (id: string) => Promise<void>;
+}
+
+interface ApiErrorResponse {
+  message?: string;
 }
 
 export function useLeads(initialFilters: LeadFilters = {}): UseLeadsReturn {
@@ -39,8 +44,9 @@ export function useLeads(initialFilters: LeadFilters = {}): UseLeadsReturn {
       });
       setLeads(response.data.leads);
       setPagination(response.data.pagination);
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to fetch leads');
+    } catch (err: unknown) {
+      const axiosError = err as AxiosError<ApiErrorResponse>;
+      setError(axiosError.response?.data?.message || 'Failed to fetch leads');
     } finally {
       setIsLoading(false);
     }

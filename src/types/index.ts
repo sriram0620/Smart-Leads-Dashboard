@@ -1,3 +1,5 @@
+// ─── User ───────────────────────────────────────────────────────────────────────
+
 export interface User {
   id: string;
   name: string;
@@ -5,8 +7,25 @@ export interface User {
   role: 'admin' | 'sales';
 }
 
-export type LeadStatus = 'new' | 'in_progress' | 'converted' | 'lost';
-export type LeadSource = 'website' | 'social_media' | 'referral' | 'email' | 'direct';
+// ─── Lead Enums ─────────────────────────────────────────────────────────────────
+
+export type LeadStatus = 'new' | 'contacted' | 'qualified' | 'lost';
+export type LeadSource = 'website' | 'instagram' | 'referral';
+
+export const LEAD_STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
+  { value: 'new', label: 'New' },
+  { value: 'contacted', label: 'Contacted' },
+  { value: 'qualified', label: 'Qualified' },
+  { value: 'lost', label: 'Lost' },
+];
+
+export const LEAD_SOURCE_OPTIONS: { value: LeadSource; label: string }[] = [
+  { value: 'website', label: 'Website' },
+  { value: 'instagram', label: 'Instagram' },
+  { value: 'referral', label: 'Referral' },
+];
+
+// ─── Lead ───────────────────────────────────────────────────────────────────────
 
 export interface Lead {
   _id: string;
@@ -32,6 +51,8 @@ export interface Lead {
   updatedAt: string;
 }
 
+// ─── Activity ───────────────────────────────────────────────────────────────────
+
 export interface Activity {
   _id: string;
   leadId: string;
@@ -44,6 +65,8 @@ export interface Activity {
   createdAt: string;
 }
 
+// ─── Pagination ─────────────────────────────────────────────────────────────────
+
 export interface PaginationData {
   page: number;
   limit: number;
@@ -52,6 +75,8 @@ export interface PaginationData {
   hasNextPage: boolean;
   hasPrevPage: boolean;
 }
+
+// ─── API Responses ──────────────────────────────────────────────────────────────
 
 export interface LeadsResponse {
   success: boolean;
@@ -72,13 +97,13 @@ export interface LeadResponse {
 export interface AnalyticsSummary {
   totalLeads: number;
   newLeads: number;
-  convertedLeads: number;
-  inProgressLeads: number;
+  contactedLeads: number;
+  qualifiedLeads: number;
   lostLeads: number;
   conversionRate: number;
   recentLeads: number;
-  leadsBySource: { source: string; count: number }[];
-  leadsByStatus: { status: string; count: number }[];
+  leadsBySource: { source: string; label: string; count: number }[];
+  leadsByStatus: { status: string; label: string; count: number }[];
 }
 
 export interface AuthResponse {
@@ -90,6 +115,8 @@ export interface AuthResponse {
   };
 }
 
+// ─── Filters ────────────────────────────────────────────────────────────────────
+
 export interface LeadFilters {
   search?: string;
   status?: string;
@@ -98,4 +125,12 @@ export interface LeadFilters {
   sortOrder?: 'asc' | 'desc';
   page?: number;
   limit?: number;
+}
+
+// ─── API Error ──────────────────────────────────────────────────────────────────
+
+export interface ApiError {
+  success: false;
+  message: string;
+  errors?: Array<{ field: string; message: string }>;
 }
