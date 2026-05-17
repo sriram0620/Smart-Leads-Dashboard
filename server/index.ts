@@ -9,6 +9,8 @@ import analyticsRoutes from './routes/analytics';
 import { errorHandler, notFound } from './middleware/errorHandler';
 import { seedDatabase } from './utils/seedData';
 
+import fs from 'fs';
+
 // Load environment variables before anything else
 dotenv.config({ path: path.resolve(import.meta.dirname, '../.env') });
 
@@ -76,8 +78,19 @@ app.use('/api/auth', authRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/analytics', analyticsRoutes);
 
-// Error handling
-app.use(notFound);
+// Serve static assets if the dist folder is present
+const distPath = path.resolve(import.meta.dirname, '../dist');
+if (fs.existsSync(distPath)) {
+  console.log('📦 Serving static assets from dist folder');
+  app.use(express.static(distPath));
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+} else {
+  console.log('⚠️ Static assets dist folder not found, skipping static serving');
+  app.use('/api/*', notFound);
+}
+
 app.use(errorHandler);
 
 // ─── Server Start ───────────────────────────────────────────────────────────────
@@ -99,3 +112,5 @@ const startServer = async (): Promise<void> => {
 };
 
 startServer();
+
+export default app;
