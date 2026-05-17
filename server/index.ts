@@ -83,13 +83,20 @@ const distPath = path.resolve(import.meta.dirname, '../dist');
 if (fs.existsSync(distPath)) {
   console.log('📦 Serving static assets from dist folder');
   app.use(express.static(distPath));
-  app.get('*', (_req, res) => {
+  
+  // Safe fallback for React Router that avoids path-to-regexp wildcard parsing
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api')) {
+      return next();
+    }
     res.sendFile(path.join(distPath, 'index.html'));
   });
 } else {
   console.log('⚠️ Static assets dist folder not found, skipping static serving');
-  app.use('/api/*', notFound);
 }
+
+// Unmatched API routes fallback
+app.use('/api', notFound);
 
 app.use(errorHandler);
 
